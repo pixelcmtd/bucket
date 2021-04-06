@@ -1,0 +1,23 @@
+all {
+    !go get github.com/chrissxYT/bucket
+    !go build
+}
+
+test {
+    !go get github.com/chrissxYT/bucket
+    !mkdir -p testdir
+    !go run bucket.go testdir
+}
+
+x86 {
+    !go get github.com/chrissxYT/bucket
+    !GOOS=linux GOARCH=amd64 go build -o bucket-x86 -v -a
+}
+
+release (x86) {
+    !sha256sum bucket-*
+}
+
+clean {
+    !rm -f bucket bucket-*
+}
