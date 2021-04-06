@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/csv"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"sync"
@@ -48,16 +49,13 @@ func main() {
 			bin.Close()
 			return
 		}
-		bfr := make([]byte, 4096)
-		body := r.Body
+		rdr := io.TeeReader(r.Body, bin)
 		for {
-			len, _ := body.Read(bfr)
-			if len == 0 {
+			b := make([]byte, 4096)
+			if _, err := rdr.Read(b); err != nil {
 				break
 			}
-			bin.Write(bfr[:len])
 		}
-		body.Close()
 		remote := r.RemoteAddr
 		ua := r.UserAgent()
 		csv := csv.NewWriter(info)
