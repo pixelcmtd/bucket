@@ -1,20 +1,18 @@
-all {
+get {
     !go get github.com/chrissxYT/bucket
+}
+
+all (get) {
     !go build
 }
 
-test {
-    !go get github.com/chrissxYT/bucket
+test (get) {
     !mkdir -p testdir
     !go run bucket.go testdir
 }
 
-x86 {
-    !go get github.com/chrissxYT/bucket
+release (get) {
     !GOOS=linux GOARCH=amd64 go build -o bucket-x86 -v -a
-}
-
-release (x86) {
     !sha256sum bucket-*
 }
 

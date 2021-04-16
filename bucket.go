@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -56,22 +57,22 @@ func main() {
 				break
 			}
 		}
-		remote := r.RemoteAddr
-		ua := r.UserAgent()
+		csvLine := []string{id, r.RemoteAddr, r.UserAgent(), time.Now().Format(time.RFC3339)}
 		csv := csv.NewWriter(info)
-		err = csv.Write([]string{id, remote, ua})
+		err = csv.Write(csvLine)
 		if err != nil {
-			fmt.Println("Can't write CSV:", err, "(", id, "from", remote, ":", ua, ")")
+			fmt.Println("Can't write CSV:", err, "(", csvLine, ")")
 		}
 		csv.Flush()
 		err = csv.Error()
 		if err != nil {
-			fmt.Println("Can't write CSV:", err, "(", id, "from", remote, ":", ua, ")")
+			fmt.Println("Can't write CSV:", err, "(", csvLine, ")")
 		}
 		bin.Close()
 		info.Close()
 		gfl.Unlock()
 		w.WriteHeader(200)
+		fmt.Println("Success:", csvLine)
 	})
 
 	http.ListenAndServe(":8022", nil)
