@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -21,33 +23,57 @@ func main() {
 
 	var gfl sync.Mutex
 
+	var requests = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "bucket_requests",
+		Help: "Requests",
+	}, []string{"remote", "user_agent"})
+	var responses = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "bucket_responses",
+		Help: "Responses",
+	}, []string{"code"})
+	var invalid = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "bucket_invalid",
+		Help: "Non-POST requests",
+	}, []string{"remote", "user_agent"})
+	prometheus.MustRegister(requests)
+	prometheus.MustRegister(responses)
+	prometheus.MustRegister(invalid)
+	http.Handle("/metrics", promhttp.Handler())
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
+			invalid.WithLabelValues(r.RemoteAddr, r.UserAgent()).Inc()
 			w.WriteHeader(400)
 			fmt.Fprint(w, "Use POST!")
 			return
 		}
+		requests.WithLabelValues(r.RemoteAddr, r.UserAgent()).Inc()
 		id := uuid.NewString()
 		binFile := outputDir + "/" + id
 		gfl.Lock()
+		defer gfl.Unlock()
 		_, err := os.Open(binFile)
 		if err == nil {
 			//TODO: regen
+			responses.WithLabelValues("500").Inc()
 			w.WriteHeader(500)
 			fmt.Fprint(w, "BLOB ", id, " already exists.")
 			return
 		}
 		bin, err := os.OpenFile(binFile, os.O_WRONLY|os.O_CREATE, 0644)
+		defer bin.Close()
 		if err != nil {
+			responses.WithLabelValues("500").Inc()
 			w.WriteHeader(500)
 			fmt.Fprint(w, "Can't create bin file: ", err)
 			return
 		}
 		info, err := os.OpenFile(infoFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+		defer info.Close()
 		if err != nil {
+			responses.WithLabelValues("500").Inc()
 			w.WriteHeader(500)
 			fmt.Fprint(w, "Can't open info file: ", err)
-			bin.Close()
 			return
 		}
 		rdr := io.TeeReader(r.Body, bin)
@@ -68,9 +94,7 @@ func main() {
 		if err != nil {
 			fmt.Println("Can't write CSV:", err, "(", csvLine, ")")
 		}
-		bin.Close()
-		info.Close()
-		gfl.Unlock()
+		responses.WithLabelValues("200").Inc()
 		w.WriteHeader(200)
 		fmt.Println("Success:", csvLine)
 	})
