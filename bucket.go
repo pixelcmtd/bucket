@@ -13,7 +13,6 @@ import (
 	"github.com/chrissxMedia/cm3.go"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -37,10 +36,7 @@ func main() {
 		Name: "bucket_invalid",
 		Help: "Non-POST requests",
 	}, []string{"remote", "user_agent"})
-	prometheus.MustRegister(requests)
-	prometheus.MustRegister(responses)
-	prometheus.MustRegister(invalid)
-	http.Handle("/metrics", promhttp.Handler())
+	cm3.HandleMetrics(requests, responses, invalid)
 
 	cm3.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
