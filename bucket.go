@@ -4,11 +4,13 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"sync"
 	"time"
 
+	"github.com/chrissxMedia/cm3.go"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -40,7 +42,7 @@ func main() {
 	prometheus.MustRegister(invalid)
 	http.Handle("/metrics", promhttp.Handler())
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	cm3.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			invalid.WithLabelValues(r.RemoteAddr, r.UserAgent()).Inc()
 			w.WriteHeader(400)
@@ -80,6 +82,7 @@ func main() {
 		for {
 			b := make([]byte, 4096)
 			if _, err := rdr.Read(b); err != nil {
+				// TODO: does this err mean something
 				break
 			}
 		}
@@ -87,17 +90,17 @@ func main() {
 		csv := csv.NewWriter(info)
 		err = csv.Write(csvLine)
 		if err != nil {
-			fmt.Println("Can't write CSV:", err, "(", csvLine, ")")
+			log.Println("Can't write CSV:", err, "(", csvLine, ")")
 		}
 		csv.Flush()
 		err = csv.Error()
 		if err != nil {
-			fmt.Println("Can't write CSV:", err, "(", csvLine, ")")
+			log.Println("Can't write CSV:", err, "(", csvLine, ")")
 		}
 		responses.WithLabelValues("200").Inc()
 		w.WriteHeader(200)
-		fmt.Println("Success:", csvLine)
+		log.Println("Success:", csvLine)
 	})
 
-	http.ListenAndServe(":8022", nil)
+	cm3.ListenAndServeHttp(":8022", nil)
 }
