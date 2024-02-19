@@ -18,6 +18,7 @@ import (
 func main() {
 	outputDir := "/var/bucket"
 	if len(os.Args) > 1 {
+        // TODO: check whether it exists
 		outputDir = os.Args[1]
 	}
 	infoFile := outputDir + "/_info.csv"
@@ -51,6 +52,7 @@ func main() {
 		gfl.Lock()
 		defer gfl.Unlock()
 		_, err := os.Open(binFile)
+        // TODO: check that it exists, not that we just can't open it
 		if err == nil {
 			//TODO: regen
 			responses.WithLabelValues("500").Inc()
@@ -82,10 +84,12 @@ func main() {
 				break
 			}
 		}
+        // TODO: consider adding r.Header.Get("X-Real-IP")
 		csvLine := []string{id, r.RemoteAddr, r.UserAgent(), time.Now().Format(time.RFC3339)}
 		csv := csv.NewWriter(info)
 		err = csv.Write(csvLine)
 		if err != nil {
+            // TODO: rethink this error handling
 			log.Println("Can't write CSV:", err, "(", csvLine, ")")
 		}
 		csv.Flush()
