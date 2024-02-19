@@ -23,6 +23,8 @@ func main() {
 	}
 	infoFile := outputDir + "/_info.csv"
 
+	fmt.Println("STARTING BUcKET, output dir:", outputDir)
+
 	var gfl sync.Mutex
 
 	var requests = prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -61,30 +63,31 @@ func main() {
 			return
 		}
 		bin, err := os.OpenFile(binFile, os.O_WRONLY|os.O_CREATE, 0644)
-		defer bin.Close()
 		if err != nil {
 			responses.WithLabelValues("500").Inc()
 			w.WriteHeader(500)
 			fmt.Fprint(w, "Can't create bin file: ", err)
 			return
 		}
+		defer bin.Close()
 		info, err := os.OpenFile(infoFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-		defer info.Close()
 		if err != nil {
 			responses.WithLabelValues("500").Inc()
 			w.WriteHeader(500)
 			fmt.Fprint(w, "Can't open info file: ", err)
 			return
 		}
-		rdr := io.TeeReader(r.Body, bin)
-		for {
-			b := make([]byte, 4096)
-			if _, err := rdr.Read(b); err != nil {
-				// TODO: does this err mean something
-				break
-			}
+		defer info.Close()
+		_, err = io.Copy(bin, r.Body)
+		if err != nil {
+			responses.WithLabelValues("500").Inc()
+			w.WriteHeader(500)
+			fmt.Fprint(w, "Can't write bin file: ", err)
+			return
 		}
         // TODO: consider adding r.Header.Get("X-Real-IP")
+		// (TODO: check whether r.RemoteAddr is the real IP or the proxy's IP)
+		// (docs don't really make it clear)
 		csvLine := []string{id, r.RemoteAddr, r.UserAgent(), time.Now().Format(time.RFC3339)}
 		csv := csv.NewWriter(info)
 		err = csv.Write(csvLine)
