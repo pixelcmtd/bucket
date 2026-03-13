@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -15,10 +16,26 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+func generateId(base string, retries uint) (string, error) {
+	id := uuid.NewString()
+	file := base + "/" + id
+	_, err := os.Stat(file)
+	if os.IsNotExist(err) {
+		return id, nil
+	} else if err != nil {
+		return "", err
+	} else if retries > 0 {
+		return generateId(base, retries-1)
+	} else {
+		return "", errors.New("Too many ID generation retries")
+	}
+
+}
+
 func main() {
 	outputDir := "/var/bucket"
 	if len(os.Args) > 1 {
-        // TODO: check whether it exists
+		// TODO: check whether it exists
 		outputDir = os.Args[1]
 	}
 	infoFile := outputDir + "/_info.csv"
@@ -41,27 +58,25 @@ func main() {
 	}, []string{"remote", "user_agent"})
 	cm3.HandleMetrics(requests, responses, invalid)
 
-	cm3.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	cm3.ListenAndServeHttp(":8022", func(w http.ResponseWriter, r *http.Request) {
+		remote := cm3.RemoteIp(r)
 		if r.Method != "POST" {
-			invalid.WithLabelValues(r.RemoteAddr, r.UserAgent()).Inc()
+			invalid.WithLabelValues(remote, r.UserAgent()).Inc()
 			w.WriteHeader(400)
 			fmt.Fprint(w, "Use POST!")
 			return
 		}
-		requests.WithLabelValues(r.RemoteAddr, r.UserAgent()).Inc()
-		id := uuid.NewString()
-		binFile := outputDir + "/" + id
+		requests.WithLabelValues(remote, r.UserAgent()).Inc()
 		gfl.Lock()
 		defer gfl.Unlock()
-		_, err := os.Open(binFile)
-        // TODO: check that it exists, not that we just can't open it
-		if err == nil {
-			//TODO: regen
+		id, err := generateId(outputDir, 10)
+		if err != nil {
 			responses.WithLabelValues("500").Inc()
 			w.WriteHeader(500)
-			fmt.Fprint(w, "BLOB ", id, " already exists.")
+			fmt.Fprint(w, "Can't generate a free BLOB ID: ", err)
 			return
 		}
+		binFile := outputDir + "/" + id
 		bin, err := os.OpenFile(binFile, os.O_WRONLY|os.O_CREATE, 0644)
 		if err != nil {
 			responses.WithLabelValues("500").Inc()
@@ -85,14 +100,12 @@ func main() {
 			fmt.Fprint(w, "Can't write bin file: ", err)
 			return
 		}
-        // TODO: consider adding r.Header.Get("X-Real-IP")
-		// (TODO: check whether r.RemoteAddr is the real IP or the proxy's IP)
-		// (docs don't really make it clear)
-		csvLine := []string{id, r.RemoteAddr, r.UserAgent(), time.Now().Format(time.RFC3339)}
+		// TODO: check whether proxied ips are properly resolved
+		csvLine := []string{id, remote, r.UserAgent(), time.Now().Format(time.RFC3339)}
 		csv := csv.NewWriter(info)
 		err = csv.Write(csvLine)
 		if err != nil {
-            // TODO: rethink this error handling
+			// TODO: rethink this error handling
 			log.Println("Can't write CSV:", err, "(", csvLine, ")")
 		}
 		csv.Flush()
@@ -104,6 +117,4 @@ func main() {
 		w.WriteHeader(200)
 		log.Println("Success:", csvLine)
 	})
-
-	cm3.ListenAndServeHttp(":8022", nil)
 }
