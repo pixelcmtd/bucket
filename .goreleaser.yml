@@ -1,3 +1,4 @@
+version: 2
 builds:
   - goos:
       - linux
@@ -8,8 +9,6 @@ builds:
       - arm64
 checksum:
   name_template: 'checksums.txt'
-snapshot:
-  name_template: "BUcKET {{ .Tag }}"
 changelog:
   sort: asc
 nfpms:
