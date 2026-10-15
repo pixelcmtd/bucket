@@ -16,6 +16,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+var gfl sync.Mutex
+
 func generateId(base string, retries uint) (string, error) {
 	id := uuid.NewString()
 	file := base + "/" + id
@@ -32,6 +34,31 @@ func generateId(base string, retries uint) (string, error) {
 
 }
 
+func createBinFile(base string) (string, *os.File, error) {
+	gfl.Lock()
+	defer gfl.Unlock()
+	id, err := generateId(base, 10)
+	if err != nil {
+		return "", nil, fmt.Errorf("Can't generate a free BLOB ID: %w", err)
+	}
+	bin, err := os.OpenFile(base+"/"+id, os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		return "", nil, fmt.Errorf("Can't create bin file: %w", err)
+	}
+	return id, bin, nil
+}
+
+func writeCsvLine(info *os.File, line []string) error {
+	gfl.Lock()
+	defer gfl.Unlock()
+	csv := csv.NewWriter(info)
+	if err := csv.Write(line); err != nil {
+		return err
+	}
+	csv.Flush()
+	return csv.Error()
+}
+
 func main() {
 	outputDir := "/var/bucket"
 	if len(os.Args) > 1 {
@@ -41,8 +68,6 @@ func main() {
 	infoFile := outputDir + "/_info.csv"
 
 	fmt.Println("STARTING BUcKET, output dir:", outputDir)
-
-	var gfl sync.Mutex
 
 	var requests = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "bucket_requests",
@@ -67,21 +92,11 @@ func main() {
 			return
 		}
 		requests.WithLabelValues(remote, r.UserAgent()).Inc()
-		gfl.Lock()
-		defer gfl.Unlock()
-		id, err := generateId(outputDir, 10)
+		id, bin, err := createBinFile(outputDir)
 		if err != nil {
 			responses.WithLabelValues("500").Inc()
 			w.WriteHeader(500)
-			fmt.Fprint(w, "Can't generate a free BLOB ID: ", err)
-			return
-		}
-		binFile := outputDir + "/" + id
-		bin, err := os.OpenFile(binFile, os.O_WRONLY|os.O_CREATE, 0644)
-		if err != nil {
-			responses.WithLabelValues("500").Inc()
-			w.WriteHeader(500)
-			fmt.Fprint(w, "Can't create bin file: ", err)
+			fmt.Fprint(w, err)
 			return
 		}
 		defer bin.Close()
@@ -100,17 +115,10 @@ func main() {
 			fmt.Fprint(w, "Can't write bin file: ", err)
 			return
 		}
-		// TODO: check whether proxied ips are properly resolved
 		csvLine := []string{id, remote, r.UserAgent(), time.Now().Format(time.RFC3339)}
-		csv := csv.NewWriter(info)
-		err = csv.Write(csvLine)
+		err = writeCsvLine(info, csvLine)
 		if err != nil {
 			// TODO: rethink this error handling
-			log.Println("Can't write CSV:", err, "(", csvLine, ")")
-		}
-		csv.Flush()
-		err = csv.Error()
-		if err != nil {
 			log.Println("Can't write CSV:", err, "(", csvLine, ")")
 		}
 		responses.WithLabelValues("200").Inc()
